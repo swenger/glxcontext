@@ -9,16 +9,29 @@
 #include <GL/gl.h>
 #include <GL/glx.h>
 #include <iostream>
+#include <string>
+#include <sstream>
 
 #define GLX_CONTEXT_MAJOR_VERSION_ARB       0x2091
 #define GLX_CONTEXT_MINOR_VERSION_ARB       0x2092
 typedef GLXContext (*glXCreateContextAttribsARBProc)(Display*, GLXFBConfig, GLXContext, Bool, const int*);
 
 static int error_handler(Display *dpy, XErrorEvent *ev) {
-	std::cerr << "X Error" << std::endl;
+	std::cerr << "XErrorEvent " << ev->type << " with error code " << ev->error_code << std::endl;
 	return 0;
 }
-	
+
+bool has_glx_extension(Display *display, const char *name) {
+	const char *extensions = glXQueryExtensionsString(display, DefaultScreen(display));
+	std::istringstream s(extensions);
+	std::string sub;
+	while (s) {
+		s >> sub;
+		if (sub == name) return true;
+	}
+	return false;
+}
+
 int main(int argc, const char *argv[]) {
 	Bool result;
 
@@ -61,28 +74,33 @@ int main(int argc, const char *argv[]) {
 		exit(4);
 	}
 
+	if (!has_glx_extension(display, "GLX_ARB_create_context")) {
+		std::cerr << "no GLX_ARB_create_context" << std::endl;
+		exit(5);
+	}
+
 	glXCreateContextAttribsARBProc glXCreateContextAttribsARB =
 		(glXCreateContextAttribsARBProc)glXGetProcAddressARB((const GLubyte*)"glXCreateContextAttribsARB");
 	if (glXCreateContextAttribsARB == NULL) {
 		std::cerr << "error getting glXCreateContextAttribsARB" << std::endl;
-		exit(5);
+		exit(6);
 	}
 
 	GLXContext context = glXCreateContextAttribsARB(display, fb_configs[0], 0, True, context_attribs);
 	if (context == NULL) {
 		std::cerr << "error creating context" << std::endl;
-		exit(6);
+		exit(7);
 	}
 
 	result = glXMakeContextCurrent(display, pbuffer, pbuffer, context);
 	if (result == False) {
 		std::cerr << "error making context current" << std::endl;
-		exit(7);
+		exit(8);
 	}
 
 	if (!glXIsDirect(display, context)) {
 		std::cerr << "context is indirect" << std::endl;
-		exit(8);
+		exit(9);
 	}
 
 	
@@ -96,7 +114,7 @@ int main(int argc, const char *argv[]) {
 	result = glXMakeContextCurrent(display, 0, 0, 0);
 	if (result == False) {
 		std::cerr << "error making no context current" << std::endl;
-		exit(9);
+		exit(10);
 	}
 
 	glXDestroyContext(display, context);
@@ -104,4 +122,6 @@ int main(int argc, const char *argv[]) {
 	XCloseDisplay(display);
 	XSetErrorHandler(oldHandler);
 }
+
+// TODO python wrapper, glXGetCurrentContext
 
