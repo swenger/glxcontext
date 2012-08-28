@@ -200,8 +200,13 @@ BOOST_PYTHON_MODULE(glxcontext) {
 	register_exception_translator<GLXError>(translateGLXError);
 
 	class_<Context>("GLXContext",
-			init<optional<const std::string &, int, int, bool, bool, bool> >(
-				args("display_name", "major_version", "minor_version", "debug", "forward_compatible", "compatibility_profile"),
+			init<const std::string &, int, int, bool, bool, bool>(
+				(arg("display_name")=":0.0",
+				arg("major_version")=4,
+				arg("minor_version")=0,
+				arg("debug")=False,
+				arg("forward_compatible")=False,
+				arg("compatibility_profile")=False),
 				"Create a new GLX context.")
 			)
 		.add_property("is_direct", &Context::is_direct)
