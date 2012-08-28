@@ -24,17 +24,6 @@
 #define GLX_CONTEXT_MINOR_VERSION_ARB       0x2092
 typedef GLXContext (*glXCreateContextAttribsARBProc)(Display*, GLXFBConfig, GLXContext, Bool, const int*);
 
-std::vector<std::pair<int, int> > get_default_context_attribs() {
-	std::vector<std::pair<int, int> > context_attribs;
-	context_attribs.push_back(std::pair<int, int>(GLX_CONTEXT_MAJOR_VERSION_ARB, 4));
-	context_attribs.push_back(std::pair<int, int>(GLX_CONTEXT_MINOR_VERSION_ARB, 0));
-	context_attribs.push_back(std::pair<int, int>(GLX_CONTEXT_FLAGS_ARB,
-				GLX_CONTEXT_FORWARD_COMPATIBLE_BIT_ARB | GLX_CONTEXT_CORE_PROFILE_BIT_ARB));
-	return context_attribs;
-}
-
-const std::vector<std::pair<int, int> > default_context_attribs = get_default_context_attribs();
-
 class GLXError: virtual public std::exception {
 	public:
 		GLXError(const std::string &message="unknown error") throw(): message(message) {}
@@ -46,7 +35,8 @@ class GLXError: virtual public std::exception {
 
 class Context {
 	public:
-		Context(const std::string &display_name=":0.0", const std::vector<std::pair<int, int> > &context_attribs=default_context_attribs);
+		Context(const std::string &display_name=":0.0", int major_version=4, int minor_version=0,
+				bool debug=False, bool forward_compatible=False, bool compatibility_profile=False);
 		Context(const Context &other);
 		~Context();
 		void bind();
@@ -102,7 +92,8 @@ Context::Context(const Context &other):
 	(*refcount)++;
 }
 
-Context::Context(const std::string &display_name, const std::vector<std::pair<int, int> > &context_attribs):
+Context::Context(const std::string &display_name, int major_version, int minor_version,
+				bool debug, bool forward_compatible, bool compatibility_profile):
 	refcount(new int(1)),
 	display(NULL),
 	glx_major(0),
@@ -113,12 +104,16 @@ Context::Context(const std::string &display_name, const std::vector<std::pair<in
 	old_context(NULL),
 	context(NULL)
 {
-	int context_attribs_array[2 * context_attribs.size() + 1];
-	for (size_t i = 0; i < context_attribs.size(); ++i) {
-		context_attribs_array[2 * i] = context_attribs[i].first;
-		context_attribs_array[2 * i + 1] = context_attribs[i].second;
-	}
-	context_attribs_array[2 * context_attribs.size()] = None;
+	int flags = 0;
+	if (debug) flags |= GLX_CONTEXT_DEBUG_BIT_ARB;
+	if (forward_compatible) flags |= GLX_CONTEXT_FORWARD_COMPATIBLE_BIT_ARB;
+	int context_attribs[] = {
+		GLX_CONTEXT_MAJOR_VERSION_ARB, major_version,
+		GLX_CONTEXT_MINOR_VERSION_ARB, minor_version,
+		GLX_CONTEXT_FLAGS_ARB, flags,
+		GLX_CONTEXT_PROFILE_MASK_ARB, compatibility_profile ? GLX_CONTEXT_COMPATIBILITY_PROFILE_BIT_ARB : GLX_CONTEXT_CORE_PROFILE_BIT_ARB,
+		None
+	};
 
 	const int attrib_list[] = {
 		None
@@ -147,7 +142,7 @@ Context::Context(const std::string &display_name, const std::vector<std::pair<in
 		throw GLXError("could not find GLX_ARB_create_context extension");
 	if (!(glXCreateContextAttribsARB = (glXCreateContextAttribsARBProc)glXGetProcAddressARB((const GLubyte*)"glXCreateContextAttribsARB")))
 		throw GLXError("could not find glXCreateContextAttribsARB");
-	if (!(context = glXCreateContextAttribsARB(display, fb_configs[0], 0, True, context_attribs_array)))
+	if (!(context = glXCreateContextAttribsARB(display, fb_configs[0], 0, True, context_attribs))) // TODO wrap other parameters
 		throw GLXError("could not create GLX context");
 }
 
@@ -199,13 +194,14 @@ PyObject* createExceptionClass(const char* name, PyObject* baseTypeObj=PyExc_Exc
 }
 
 BOOST_PYTHON_MODULE(glxcontext) {
+	docstring_options doc_options(true, true, false);
+
 	type_GLXError = createExceptionClass("GLXError");
 	register_exception_translator<GLXError>(translateGLXError);
 
 	class_<Context>("GLXContext",
-			init<optional<const std::string &, const std::vector<std::pair<int, int> > &> >(
-				// TODO translator for vector<pair<int, int> > from kwargs
-				args("display_name", "context_attribs"),
+			init<optional<const std::string &, int, int, bool, bool, bool> >(
+				args("display_name", "major_version", "minor_version", "debug", "forward_compatible", "compatibility_profile"),
 				"Create a new GLX context.")
 			)
 		.add_property("is_direct", &Context::is_direct)
