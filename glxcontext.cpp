@@ -181,18 +181,33 @@ Context::~Context() {
 #ifdef PYTHON_WRAPPER
 using namespace boost::python;
 
-void translator(GLXError const &e) {
-	PyErr_SetString(PyExc_RuntimeError, e.what()); // TODO Python class
+PyObject *type_GLXError = NULL;
+
+void translateGLXError(GLXError const &e) {
+	PyErr_SetString(type_GLXError, e.what());
+}
+
+PyObject* createExceptionClass(const char* name, PyObject* baseTypeObj=PyExc_Exception) {
+	std::string scopeName = extract<std::string>(scope().attr("__name__"));
+	std::string qualifiedName0 = scopeName + "." + name;
+	char* qualifiedName1 = const_cast<char*>(qualifiedName0.c_str());
+
+	PyObject* typeObj = PyErr_NewException(qualifiedName1, baseTypeObj, 0);
+	if(!typeObj) throw_error_already_set();
+	scope().attr(name) = handle<>(borrowed(typeObj));
+	return typeObj;
 }
 
 BOOST_PYTHON_MODULE(glxcontext) {
-	register_exception_translator<GLXError>(translator);
+	type_GLXError = createExceptionClass("GLXError");
+	register_exception_translator<GLXError>(translateGLXError);
 
-	class_<GLXError>("GLXError")
-		.def("__str__", &GLXError::what)
-		;
-
-	class_<Context>("GLXContext")
+	class_<Context>("GLXContext",
+			init<optional<const std::string &, const std::vector<std::pair<int, int> > &> >(
+				// TODO translator for vector<pair<int, int> > from kwargs
+				args("display_name", "context_attribs"),
+				"Create a new GLX context.")
+			)
 		.add_property("is_direct", &Context::is_direct)
 		;
 }
