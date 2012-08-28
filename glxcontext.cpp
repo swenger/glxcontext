@@ -16,10 +16,14 @@
 #define GLX_CONTEXT_MINOR_VERSION_ARB       0x2092
 typedef GLXContext (*glXCreateContextAttribsARBProc)(Display*, GLXFBConfig, GLXContext, Bool, const int*);
 
-static int error_handler(Display *dpy, XErrorEvent *ev) {
-	std::cerr << "XErrorEvent " << ev->type << " with error code " << ev->error_code << std::endl; // TODO
-	return 0;
-}
+class GLXError: virtual public std::exception {
+	public:
+		GLXError(const char *message) throw(): message(message) {}
+		virtual ~GLXError() throw() {}
+		virtual const char *what() const throw() { return message; }
+	private:
+		const char *message;
+};
 
 class Context {
 	public:
@@ -46,8 +50,11 @@ class Context {
 		GLXContext context;
 };
 
-void Context::error(const char *message) {
-	std::cerr << message << std::endl; // TODO
+static int error_handler(Display *display, XErrorEvent *event) {
+	char buffer[2048];
+	XGetErrorText(display, event->error_code, buffer, sizeof(buffer));
+	throw GLXError(buffer);
+	return 0;
 }
 
 bool Context::has_glx_extension(const char *name) {
@@ -85,33 +92,33 @@ Context::Context():
 	old_error_handler = XSetErrorHandler(&error_handler);
 
 	if ((display = XOpenDisplay(":0.0")) == NULL)
-		error("could not open display");
+		throw GLXError("could not open X display");
 	if (!glXQueryVersion(display, &glx_major, &glx_minor))
-		error("error getting GLX version");
+		throw GLXError("could not get GLX version");
 	if (((glx_major == 1) && (glx_minor < 3)) || (glx_major < 1))
-		error("need at least GLX 1.3");
+		throw GLXError("need at least GLX 1.3");
 	if (!(fb_configs = glXChooseFBConfig(display, DefaultScreen(display), attrib_list, &num_fb_configs)))
-		error("error in glXChooseFBConfig");
+		throw GLXError("could not determine valid framebuffer configurations");
 	if (!num_fb_configs)
-		error("no fb configs");
+		throw GLXError("no valid framebuffer configurations");
 	if (!(pbuffer = glXCreatePbuffer(display, fb_configs[0], attrib_list)))
-		error("error creating pbuffer");
+		throw GLXError("could not create pixel buffer");
 
 	old_context = glXGetCurrentContext();
 	old_drawable = glXGetCurrentDrawable();
 	old_read_drawable = glXGetCurrentReadDrawable();
-	
+
 	if (!has_glx_extension("GLX_ARB_create_context"))
-		error("no GLX_ARB_create_context");
+		throw GLXError("could not find GLX_ARB_create_context extension");
 	if (!(glXCreateContextAttribsARB = (glXCreateContextAttribsARBProc)glXGetProcAddressARB((const GLubyte*)"glXCreateContextAttribsARB")))
-		error("error getting glXCreateContextAttribsARB");
+		throw GLXError("could not find glXCreateContextAttribsARB");
 	if (!(context = glXCreateContextAttribsARB(display, fb_configs[0], 0, True, context_attribs)))
-		error("error creating context");
+		throw GLXError("could not create GLX context");
 }
 
 void Context::bind() {
 	if (!(glXMakeContextCurrent(display, pbuffer, pbuffer, context)))
-		error("error making context current");
+		throw GLXError("could not make GLX context current");
 }
 
 bool Context::is_direct() const {
@@ -134,7 +141,7 @@ Context::~Context() {
 
 int main(int argc, const char *argv[]) {
 	Context context;
-	
+
 	glClearColor(1.0, 1.0, 0.0, 1.0);
 	glClear(GL_COLOR_BUFFER_BIT);
 	glFlush();
