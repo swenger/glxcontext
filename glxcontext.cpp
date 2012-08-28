@@ -210,7 +210,7 @@ BOOST_PYTHON_MODULE(glxcontext) {
 				"Create a new GLX context.")
 			)
 		.add_property("is_direct", &Context::is_direct)
-		.def("_bind", &Context::bind)
+		.def("bind", &Context::bind)
 		;
 }
 #else
